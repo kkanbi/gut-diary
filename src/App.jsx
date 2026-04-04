@@ -176,8 +176,42 @@ export default function GutDiary() {
   return (
     <div style={{ minHeight:"100vh", background:"#faf7f4", fontFamily:"Georgia,serif", padding:"24px 32px" }}>
 
-      <div style={{ fontSize:11, letterSpacing:3, color:"#a8927a", textTransform:"uppercase", marginBottom:4 }}>장 건강 기록장</div>
-      <h1 style={{ fontSize:26, fontWeight:700, color:"#3d2b1f", margin:"0 0 20px" }}>내 배 일기 🫙</h1>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+  <div>
+    <div style={{ fontSize:11, letterSpacing:3, color:"#a8927a", textTransform:"uppercase", marginBottom:4 }}>장 건강 기록장</div>
+    <h1 style={{ fontSize:26, fontWeight:700, color:"#3d2b1f", margin:"0 0 20px" }}>내 배 일기 🫙</h1>
+  </div>
+  <div style={{ display:"flex", gap:6, marginTop:4 }}>
+    <button onClick={() => {
+      const blob = new Blob([JSON.stringify(entries, null, 2)], { type:"application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `gut-diary-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }} style={ioBtn}>⬇ 내보내기</button>
+    <label style={ioBtn}>
+      ⬆ 가져오기
+      <input type="file" accept=".json" style={{ display:"none" }} onChange={e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          try {
+            const data = JSON.parse(ev.target.result);
+            if (Array.isArray(data)) {
+              setEntries(data);
+              alert(`✅ ${data.length}개 기록을 불러왔어!`);
+            } else { alert("❌ 올바른 파일이 아니야"); }
+          } catch { alert("❌ 파일 읽기 실패"); }
+        };
+        reader.readAsText(file);
+        e.target.value = "";
+      }} />
+    </label>
+  </div>
+</div>
 
       {total > 0 && (
         <div style={{ display:"flex", marginBottom:18, background:"#fff", borderRadius:12, padding:"12px", border:"1px solid #e8ddd5" }}>
