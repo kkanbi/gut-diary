@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 
-// ── 증상 정의 (sev: -1=좋음, 0=무반응, 1=불편, 2=심함) ──
 const SYMPTOMS = [
   { value: -1, label: "무반응",     emoji: "⚪", color: "#cbd5e1", sev: 0  },
   { value:  4, label: "쾌변",       emoji: "💚", color: "#22c55e", sev: -1 },
@@ -11,17 +10,15 @@ const SYMPTOMS = [
   { value:  3, label: "설사",       emoji: "🔴", color: "#f87171", sev: 2  },
 ];
 
-const sym     = (v) => SYMPTOMS.find(s => s.value === v) ?? SYMPTOMS[0];
-const sevOf   = (v) => sym(v).sev;
+const sym   = (v) => SYMPTOMS.find(s => s.value === v) ?? SYMPTOMS[0];
+const sevOf = (v) => sym(v).sev;
 
-// 증상 배열 중 가장 심한 증상 value 반환 (severity 기준)
 function worstVal(syms = []) {
   const active = syms.filter(v => v !== -1);
   if (!active.length) return -1;
   return active.reduce((a, b) => sevOf(b) > sevOf(a) ? b : a);
 }
 
-// entry 전체의 최악 severity 반환
 function worstSev(entry) {
   const vals = entry.meals.filter(m => !m.isPrev).flatMap(m => m.symptoms ?? [-1]);
   const active = vals.filter(v => v !== -1);
@@ -29,7 +26,6 @@ function worstSev(entry) {
   return Math.max(...active.map(sevOf));
 }
 
-// ── 한국어 초성 검색 ──
 const CHOSUNG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
 function getChosung(str) {
   return str.split('').map(ch => {
@@ -40,12 +36,9 @@ function getChosung(str) {
 }
 function matchFood(food, query) {
   if (!query) return false;
-  const f = food.toLowerCase();
-  const q = query.toLowerCase();
-  return f.includes(q) || getChosung(food).includes(q);
+  return food.toLowerCase().includes(query.toLowerCase()) || getChosung(food).includes(query);
 }
 
-// ── 식사 기본 구조 ──
 const BASE_MEALS = [
   { key: "dinner_prev", label: "어제 저녁", icon: "🌙", isPrev: true,  fixed: true  },
   { key: "breakfast",   label: "아침",      icon: "☀️",  isPrev: false, fixed: false },
@@ -58,18 +51,13 @@ function mkBaseMeal(m)      { return { ...m, food: "", symptoms: [-1] }; }
 function mkForm(entries = []) {
   const meals = BASE_MEALS.map(mkBaseMeal);
   if (entries.length > 0) {
-    const last = entries[0];
-    const lastDinner = last.meals.find(m => m.key === "dinner");
+    const lastDinner = entries[0].meals.find(m => m.key === "dinner");
     if (lastDinner?.food) {
-      const prevIdx = meals.findIndex(m => m.key === "dinner_prev");
-      if (prevIdx !== -1) meals[prevIdx] = { ...meals[prevIdx], food: lastDinner.food };
+      const idx = meals.findIndex(m => m.key === "dinner_prev");
+      if (idx !== -1) meals[idx] = { ...meals[idx], food: lastDinner.food };
     }
   }
-  return {
-    date: new Date().toISOString().slice(0, 10),
-    meals,
-    note: "",
-  };
+  return { date: new Date().toISOString().slice(0, 10), meals, note: "" };
 }
 
 function toggleSymptom(current = [], val) {
@@ -82,13 +70,10 @@ function toggleSymptom(current = [], val) {
   return [...without, val];
 }
 
-// ── 메인 컴포넌트 ──
 export default function GutDiary() {
   const [entries, setEntries] = useState(() => {
-    try {
-      const saved = localStorage.getItem("gut-diary");
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
+    try { const s = localStorage.getItem("gut-diary"); return s ? JSON.parse(s) : []; }
+    catch { return []; }
   });
   const [form, setForm]             = useState(mkForm());
   const [editId, setEditId]         = useState(null);
@@ -100,7 +85,6 @@ export default function GutDiary() {
     try { localStorage.setItem("gut-diary", JSON.stringify(entries)); } catch {}
   }, [entries]);
 
-  // 과거 음식 목록 (자동완성용)
   const foodHistory = useMemo(() => {
     const set = new Set();
     entries.forEach(e => e.meals.forEach(m => {
@@ -166,6 +150,29 @@ export default function GutDiary() {
     setEntries(es => es.filter(e => e.id !== id));
     if (expandedId === id) setExpandedId(null);
   }
+  function handleExport() {
+    const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = `gut-diary-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  function handleImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (Array.isArray(data)) { setEntries(data); alert(`✅ ${data.length}개 기록 불러왔어!`); }
+        else { alert("❌ 올바른 파일이 아니야"); }
+      } catch { alert("❌ 파일 읽기 실패"); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
 
   const total    = entries.length;
   const goodDays = entries.filter(e => worstSev(e) === -1).length;
@@ -176,43 +183,21 @@ export default function GutDiary() {
   return (
     <div style={{ minHeight:"100vh", background:"#faf7f4", fontFamily:"Georgia,serif", padding:"24px 32px" }}>
 
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-  <div>
-    <div style={{ fontSize:11, letterSpacing:3, color:"#a8927a", textTransform:"uppercase", marginBottom:4 }}>장 건강 기록장</div>
-    <h1 style={{ fontSize:26, fontWeight:700, color:"#3d2b1f", margin:"0 0 20px" }}>내 배 일기 🫙</h1>
-  </div>
-  <div style={{ display:"flex", gap:6, marginTop:4 }}>
-    <button onClick={() => {
-      const blob = new Blob([JSON.stringify(entries, null, 2)], { type:"application/json" });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href     = url;
-      a.download = `gut-diary-${new Date().toISOString().slice(0,10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }} style={ioBtn}>⬇ 내보내기</button>
-    <label style={ioBtn}>
-      ⬆ 가져오기
-      <input type="file" accept=".json" style={{ display:"none" }} onChange={e => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = ev => {
-          try {
-            const data = JSON.parse(ev.target.result);
-            if (Array.isArray(data)) {
-              setEntries(data);
-              alert(`✅ ${data.length}개 기록을 불러왔어!`);
-            } else { alert("❌ 올바른 파일이 아니야"); }
-          } catch { alert("❌ 파일 읽기 실패"); }
-        };
-        reader.readAsText(file);
-        e.target.value = "";
-      }} />
-    </label>
-  </div>
-</div>
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
+        <div>
+          <div style={{ fontSize:11, letterSpacing:3, color:"#a8927a", textTransform:"uppercase", marginBottom:4 }}>장 건강 기록장</div>
+          <h1 style={{ fontSize:26, fontWeight:700, color:"#3d2b1f", margin:0 }}>내 배 일기 🫙</h1>
+        </div>
+        <div style={{ display:"flex", gap:6, marginTop:4 }}>
+          <button onClick={handleExport} style={ioBtn}>⬇ 내보내기</button>
+          <label style={ioBtn}>⬆ 가져오기
+            <input type="file" accept=".json" style={{ display:"none" }} onChange={handleImport} />
+          </label>
+        </div>
+      </div>
 
+      {/* Stats */}
       {total > 0 && (
         <div style={{ display:"flex", marginBottom:18, background:"#fff", borderRadius:12, padding:"12px", border:"1px solid #e8ddd5" }}>
           <Stat label="기록" value={`${total}일`} color="#3d2b1f" />
@@ -222,6 +207,7 @@ export default function GutDiary() {
         </div>
       )}
 
+      {/* Tabs */}
       <div style={{ display:"flex", gap:4, marginBottom:18, background:"#ede8e3", borderRadius:10, padding:4 }}>
         {[["log","✏️ 오늘 기록"],["history",`📋 히스토리 (${total})`]].map(([t,lbl]) => (
           <button key={t} onClick={() => setView(t)} style={{
@@ -238,7 +224,6 @@ export default function GutDiary() {
       {view === "log" && (
         <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
 
-          {/* Form */}
           <div style={{ flex:"2", minWidth:0, background:"#fff", borderRadius:16, padding:20, border:"1px solid #e8ddd5" }}>
             <Label>날짜</Label>
             <input type="date" value={form.date}
@@ -273,7 +258,6 @@ export default function GutDiary() {
                     )}
                   </div>
 
-                  {/* 음식 입력 (자동완성) */}
                   <FoodInput
                     value={meal.food}
                     onChange={val => updateMeal(idx, "food", val)}
@@ -354,18 +338,17 @@ export default function GutDiary() {
             })()}
 
             {timelineMeals.map((meal, i) => {
-              const syms      = meal.symptoms ?? [-1];
-              const worst     = worstVal(syms);
-              const ws        = sym(worst);
-              const isLast    = i === timelineMeals.length - 1;
+              const syms       = meal.symptoms ?? [-1];
+              const worst      = worstVal(syms);
+              const ws         = sym(worst);
+              const isLast     = i === timelineMeals.length - 1;
               const activeSyms = syms.filter(v => v !== -1).map(sym);
               return (
                 <div key={meal.key} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
                   <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
                     <div style={{
                       width:14, height:14, borderRadius:"50%", background: ws.color,
-                      boxShadow: ws.sev >= 1 ? `0 0 0 3px ${ws.color}33` : "none",
-                      flexShrink:0,
+                      boxShadow: ws.sev >= 1 ? `0 0 0 3px ${ws.color}33` : "none", flexShrink:0,
                     }} />
                     {!isLast && <div style={{ width:2, flex:1, minHeight:36, background:"#f0ebe6", margin:"2px 0" }} />}
                   </div>
@@ -374,7 +357,7 @@ export default function GutDiary() {
                     {activeSyms.length > 0 ? (
                       <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:4 }}>
                         {activeSyms.map(s => (
-                          <span key={s.value} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background: s.color+"22", color:"#3d2b1f", fontWeight:600 }}>
+                          <span key={s.value} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:s.color+"22", color:"#3d2b1f", fontWeight:600 }}>
                             {s.emoji} {s.label}
                           </span>
                         ))}
@@ -413,9 +396,9 @@ export default function GutDiary() {
             </div>
           )}
           {entries.map(entry => {
-            const worst  = worstVal(entry.meals.filter(m=>!m.isPrev).flatMap(m=>m.symptoms??[-1]));
-            const s      = sym(worst);
-            const isOpen = expandedId === entry.id;
+            const worst   = worstVal(entry.meals.filter(m=>!m.isPrev).flatMap(m=>m.symptoms??[-1]));
+            const s       = sym(worst);
+            const isOpen  = expandedId === entry.id;
             const nonPrev = entry.meals.filter(m => !m.isPrev);
             return (
               <div key={entry.id} style={{
@@ -445,9 +428,9 @@ export default function GutDiary() {
                   <div style={{ borderTop:"1px solid #f0ebe6" }}>
                     <div style={{ padding:"12px 16px" }}>
                       {entry.meals.map((m, i) => {
-                        const syms = m.symptoms ?? [-1];
-                        const w    = worstVal(syms);
-                        const ms   = sym(w);
+                        const syms       = m.symptoms ?? [-1];
+                        const w          = worstVal(syms);
+                        const ms         = sym(w);
                         const activeSyms = syms.filter(v => v !== -1).map(sym);
                         if (!m.food && (m.isPrev || (syms.length === 1 && syms[0] === -1))) return null;
                         const isLast = i === entry.meals.length - 1;
@@ -492,11 +475,9 @@ export default function GutDiary() {
   );
 }
 
-// ── 음식 입력 + 자동완성 ──
 function FoodInput({ value, onChange, placeholder, foodHistory }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSug, setShowSug]         = useState(false);
-  const ref = useRef(null);
 
   function handleChange(e) {
     const val = e.target.value;
@@ -521,7 +502,6 @@ function FoodInput({ value, onChange, placeholder, foodHistory }) {
   return (
     <div style={{ position:"relative", marginBottom:8 }}>
       <textarea
-        ref={ref}
         value={value}
         onChange={handleChange}
         onBlur={() => setTimeout(() => setShowSug(false), 150)}
@@ -537,14 +517,11 @@ function FoodInput({ value, onChange, placeholder, foodHistory }) {
           {suggestions.map((f, i) => (
             <div key={i} onMouseDown={() => selectSug(f)} style={{
               padding:"8px 12px", fontSize:13, color:"#3d2b1f", cursor:"pointer",
-              borderTop: i > 0 ? "1px solid #f0ebe6" : "none",
-              background:"#fff",
+              borderTop: i > 0 ? "1px solid #f0ebe6" : "none", background:"#fff",
             }}
             onMouseEnter={e => e.currentTarget.style.background = "#faf7f4"}
             onMouseLeave={e => e.currentTarget.style.background = "#fff"}
-            >
-              {f}
-            </div>
+            >{f}</div>
           ))}
         </div>
       )}
@@ -552,7 +529,6 @@ function FoodInput({ value, onChange, placeholder, foodHistory }) {
   );
 }
 
-// ── 공통 컴포넌트 ──
 function MoveBtn({ onClick, disabled, children }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
@@ -584,3 +560,8 @@ const sBtn = color => ({
   padding:"5px 14px", border:`1px solid ${color}`, borderRadius:8,
   background:"transparent", color, fontSize:12, fontFamily:"inherit", cursor:"pointer",
 });
+const ioBtn = {
+  padding:"6px 12px", border:"1px solid #e8ddd5", borderRadius:8,
+  background:"#fff", color:"#a8927a", fontSize:12, fontFamily:"Georgia,serif",
+  cursor:"pointer", whiteSpace:"nowrap",
+};
