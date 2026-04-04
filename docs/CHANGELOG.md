@@ -2,6 +2,15 @@
 
 ---
 
+## [0.2.1] — 2026-04-04
+
+### Changed
+- README.md — Vite 기본 템플릿에서 프로젝트 전용 문서로 전면 교체
+- ARCHITECTURE.md — emoji/color 필드 추가, 서브 컴포넌트 목록·localStorage 구조·주의사항 보완
+- ARCHITECTURE.md — React/Vite 버전 실제값(19/8)으로 수정
+
+---
+
 ## [0.2.0] — 2026-04-04
 
 ### Added
