@@ -1,0 +1,552 @@
+import { useState, useEffect, useMemo, useRef } from "react";
+
+// ── 증상 정의 (sev: -1=좋음, 0=무반응, 1=불편, 2=심함) ──
+const SYMPTOMS = [
+  { value: -1, label: "무반응",     emoji: "⚪", color: "#cbd5e1", sev: 0  },
+  { value:  4, label: "쾌변",       emoji: "💚", color: "#22c55e", sev: -1 },
+  { value:  1, label: "미묘한불편", emoji: "🟡", color: "#facc15", sev: 1  },
+  { value:  5, label: "가스참",     emoji: "🫧", color: "#a78bfa", sev: 1  },
+  { value:  6, label: "잔변감",     emoji: "😣", color: "#f472b6", sev: 1  },
+  { value:  2, label: "아랫배아픔", emoji: "🟠", color: "#fb923c", sev: 2  },
+  { value:  3, label: "설사",       emoji: "🔴", color: "#f87171", sev: 2  },
+];
+
+const sym     = (v) => SYMPTOMS.find(s => s.value === v) ?? SYMPTOMS[0];
+const sevOf   = (v) => sym(v).sev;
+
+// 증상 배열 중 가장 심한 증상 value 반환 (severity 기준)
+function worstVal(syms = []) {
+  const active = syms.filter(v => v !== -1);
+  if (!active.length) return -1;
+  return active.reduce((a, b) => sevOf(b) > sevOf(a) ? b : a);
+}
+
+// entry 전체의 최악 severity 반환
+function worstSev(entry) {
+  const vals = entry.meals.filter(m => !m.isPrev).flatMap(m => m.symptoms ?? [-1]);
+  const active = vals.filter(v => v !== -1);
+  if (!active.length) return 0;
+  return Math.max(...active.map(sevOf));
+}
+
+// ── 한국어 초성 검색 ──
+const CHOSUNG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+function getChosung(str) {
+  return str.split('').map(ch => {
+    const code = ch.charCodeAt(0) - 0xAC00;
+    if (code < 0 || code > 11171) return ch;
+    return CHOSUNG[Math.floor(code / 588)];
+  }).join('');
+}
+function matchFood(food, query) {
+  if (!query) return false;
+  const f = food.toLowerCase();
+  const q = query.toLowerCase();
+  return f.includes(q) || getChosung(food).includes(q);
+}
+
+// ── 식사 기본 구조 ──
+const BASE_MEALS = [
+  { key: "dinner_prev", label: "어제 저녁", icon: "🌙", isPrev: true,  fixed: true  },
+  { key: "breakfast",   label: "아침",      icon: "☀️",  isPrev: false, fixed: false },
+  { key: "lunch",       label: "점심",      icon: "🌤️",  isPrev: false, fixed: false },
+  { key: "dinner",      label: "저녁",      icon: "🌙",  isPrev: false, fixed: false },
+];
+
+function mkMeal(key, label) { return { key, label, icon: "🍬", isPrev: false, fixed: false, food: "", symptoms: [-1] }; }
+function mkBaseMeal(m)      { return { ...m, food: "", symptoms: [-1] }; }
+function mkForm(entries = []) {
+  const meals = BASE_MEALS.map(mkBaseMeal);
+  if (entries.length > 0) {
+    const last = entries[0];
+    const lastDinner = last.meals.find(m => m.key === "dinner");
+    if (lastDinner?.food) {
+      const prevIdx = meals.findIndex(m => m.key === "dinner_prev");
+      if (prevIdx !== -1) meals[prevIdx] = { ...meals[prevIdx], food: lastDinner.food };
+    }
+  }
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    meals,
+    note: "",
+  };
+}
+
+function toggleSymptom(current = [], val) {
+  if (val === -1) return [-1];
+  const without = current.filter(v => v !== -1);
+  if (without.includes(val)) {
+    const next = without.filter(v => v !== val);
+    return next.length ? next : [-1];
+  }
+  return [...without, val];
+}
+
+// ── 메인 컴포넌트 ──
+export default function GutDiary() {
+  const [entries, setEntries] = useState(() => {
+    try {
+      const saved = localStorage.getItem("gut-diary");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [form, setForm]             = useState(mkForm());
+  const [editId, setEditId]         = useState(null);
+  const [view, setView]             = useState("log");
+  const [expandedId, setExpandedId] = useState(null);
+  const [flash, setFlash]           = useState("");
+
+  useEffect(() => {
+    try { localStorage.setItem("gut-diary", JSON.stringify(entries)); } catch {}
+  }, [entries]);
+
+  // 과거 음식 목록 (자동완성용)
+  const foodHistory = useMemo(() => {
+    const set = new Set();
+    entries.forEach(e => e.meals.forEach(m => {
+      if (m.food) m.food.split(',').forEach(f => { const t = f.trim(); if (t) set.add(t); });
+    }));
+    return [...set];
+  }, [entries]);
+
+  function updateMeal(idx, field, val) {
+    setForm(f => ({ ...f, meals: f.meals.map((m, i) => i === idx ? { ...m, [field]: val } : m) }));
+  }
+  function toggleSym(idx, val) {
+    setForm(f => {
+      const next = toggleSymptom(f.meals[idx].symptoms, val);
+      return { ...f, meals: f.meals.map((m, i) => i === idx ? { ...m, symptoms: next } : m) };
+    });
+  }
+  function addSnack() {
+    setForm(f => ({ ...f, meals: [...f.meals, mkMeal(`snack_${Date.now()}`, "간식")] }));
+  }
+  function removeSnack(idx) {
+    setForm(f => ({ ...f, meals: f.meals.filter((_, i) => i !== idx) }));
+  }
+  function moveUp(idx) {
+    setForm(f => {
+      const meals = [...f.meals];
+      const min = meals.findIndex(m => !m.fixed);
+      if (idx <= min) return f;
+      [meals[idx-1], meals[idx]] = [meals[idx], meals[idx-1]];
+      return { ...f, meals };
+    });
+  }
+  function moveDown(idx) {
+    setForm(f => {
+      const meals = [...f.meals];
+      if (idx >= meals.length-1 || meals[idx].fixed) return f;
+      [meals[idx], meals[idx+1]] = [meals[idx+1], meals[idx]];
+      return { ...f, meals };
+    });
+  }
+  function handleSave() {
+    if (!form.date) return;
+    let updated;
+    if (editId !== null) {
+      updated = entries.map(e => e.id === editId ? { ...form, id: editId } : e);
+      setEntries(updated);
+      setEditId(null);
+    } else {
+      const ne = { ...form, id: Date.now() };
+      updated = [ne, ...entries].sort((a, b) => b.date.localeCompare(a.date));
+      setEntries(updated);
+    }
+    setFlash("✅ 저장됨!");
+    setForm(mkForm(updated));
+    setTimeout(() => { setFlash(""); setView("history"); }, 700);
+  }
+  function handleEdit(entry) {
+    setForm({ ...entry, meals: entry.meals.map(m => ({ ...m, symptoms: [...(m.symptoms ?? [-1])] })) });
+    setEditId(entry.id);
+    setView("log");
+  }
+  function handleDelete(id) {
+    setEntries(es => es.filter(e => e.id !== id));
+    if (expandedId === id) setExpandedId(null);
+  }
+
+  const total    = entries.length;
+  const goodDays = entries.filter(e => worstSev(e) === -1).length;
+  const mildDays = entries.filter(e => worstSev(e) === 1).length;
+  const badDays  = entries.filter(e => worstSev(e) === 2).length;
+  const timelineMeals = form.meals.filter(m => !m.isPrev);
+
+  return (
+    <div style={{ minHeight:"100vh", background:"#faf7f4", fontFamily:"Georgia,serif", padding:"24px 32px" }}>
+
+      <div style={{ fontSize:11, letterSpacing:3, color:"#a8927a", textTransform:"uppercase", marginBottom:4 }}>장 건강 기록장</div>
+      <h1 style={{ fontSize:26, fontWeight:700, color:"#3d2b1f", margin:"0 0 20px" }}>내 배 일기 🫙</h1>
+
+      {total > 0 && (
+        <div style={{ display:"flex", marginBottom:18, background:"#fff", borderRadius:12, padding:"12px", border:"1px solid #e8ddd5" }}>
+          <Stat label="기록" value={`${total}일`} color="#3d2b1f" />
+          <SD /><Stat label="쾌변" value={`${goodDays}일`} color="#22c55e" />
+          <SD /><Stat label="불편" value={`${mildDays}일`} color="#d97706" />
+          <SD /><Stat label="심함" value={`${badDays}일`} color="#dc2626" />
+        </div>
+      )}
+
+      <div style={{ display:"flex", gap:4, marginBottom:18, background:"#ede8e3", borderRadius:10, padding:4 }}>
+        {[["log","✏️ 오늘 기록"],["history",`📋 히스토리 (${total})`]].map(([t,lbl]) => (
+          <button key={t} onClick={() => setView(t)} style={{
+            flex:1, padding:"8px 0", border:"none", borderRadius:8,
+            background: view===t ? "#fff" : "transparent",
+            color: view===t ? "#3d2b1f" : "#a8927a",
+            fontFamily:"inherit", fontSize:13, fontWeight: view===t ? 700 : 400,
+            cursor:"pointer", boxShadow: view===t ? "0 1px 3px rgba(0,0,0,.08)" : "none",
+          }}>{lbl}</button>
+        ))}
+      </div>
+
+      {/* ── LOG ── */}
+      {view === "log" && (
+        <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
+
+          {/* Form */}
+          <div style={{ flex:"2", minWidth:0, background:"#fff", borderRadius:16, padding:20, border:"1px solid #e8ddd5" }}>
+            <Label>날짜</Label>
+            <input type="date" value={form.date}
+              onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+              style={{ ...iStyle, marginBottom:16 }} />
+
+            {form.meals.map((meal, idx) => {
+              const isSnack    = meal.key.startsWith("snack");
+              const isLast     = idx === form.meals.length - 1;
+              const minMovable = form.meals.findIndex(m => !m.fixed);
+              const syms       = meal.symptoms ?? [-1];
+              return (
+                <div key={meal.key} style={{ marginBottom:16, paddingBottom:16, borderBottom:"1px dashed #f0ebe6" }}>
+                  <div style={{ display:"flex", alignItems:"center", marginBottom:6, gap:6 }}>
+                    <span style={{ fontSize:14 }}>{meal.icon}</span>
+                    {isSnack ? (
+                      <input value={meal.label} onChange={e => updateMeal(idx, "label", e.target.value)}
+                        style={{ flex:1, border:"none", background:"transparent", fontFamily:"inherit", fontSize:12, fontWeight:600, color:"#a8927a", outline:"none" }} />
+                    ) : (
+                      <span style={{ flex:1, fontSize:12, fontWeight:600, color:"#a8927a" }}>
+                        {meal.label}{meal.isPrev ? " (어제)" : ""}
+                      </span>
+                    )}
+                    {!meal.fixed && !meal.isPrev && (
+                      <div style={{ display:"flex", gap:2 }}>
+                        <MoveBtn disabled={idx <= minMovable} onClick={() => moveUp(idx)}>▲</MoveBtn>
+                        <MoveBtn disabled={isLast} onClick={() => moveDown(idx)}>▼</MoveBtn>
+                      </div>
+                    )}
+                    {isSnack && (
+                      <button onClick={() => removeSnack(idx)} style={{ border:"none", background:"transparent", color:"#f87171", cursor:"pointer", fontSize:14, padding:"0 2px" }}>✕</button>
+                    )}
+                  </div>
+
+                  {/* 음식 입력 (자동완성) */}
+                  <FoodInput
+                    value={meal.food}
+                    onChange={val => updateMeal(idx, "food", val)}
+                    placeholder={meal.isPrev ? "어제 저녁에 뭐 먹었어?" : `${meal.label}에 뭐 먹었어?`}
+                    foodHistory={foodHistory}
+                  />
+
+                  {!meal.isPrev && (
+                    <>
+                      <div style={{ fontSize:10, color:"#b8a898", marginBottom:4 }}>복수 선택 가능</div>
+                      <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
+                        {SYMPTOMS.map(s => {
+                          const active = syms.includes(s.value);
+                          return (
+                            <button key={s.value} onClick={() => toggleSym(idx, s.value)} style={{
+                              flex:"1 1 0", minWidth:0, padding:"6px 1px", border:"2px solid",
+                              borderColor: active ? s.color : "#e8ddd5", borderRadius:7,
+                              background: active ? s.color+"22" : "#faf7f4",
+                              cursor:"pointer", fontFamily:"inherit", fontSize:9,
+                              color: active ? "#3d2b1f" : "#a8927a",
+                              fontWeight: active ? 700 : 400, lineHeight:1.5, transition:"all .12s",
+                            }}>{s.emoji}<br />{s.label}</button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            <button onClick={addSnack} style={{
+              width:"100%", padding:"8px 0", border:"1px dashed #e8ddd5",
+              borderRadius:10, background:"transparent", color:"#a8927a",
+              fontFamily:"inherit", fontSize:13, cursor:"pointer", marginBottom:16,
+            }}>＋ 간식 추가</button>
+
+            <Label>메모 (선택)</Label>
+            <textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
+              placeholder="스트레스, 수면, 특이사항..."
+              style={{ ...iStyle, height:52, resize:"vertical", marginBottom:14 }} />
+
+            {flash && <div style={{ textAlign:"center", fontSize:14, color:"#22c55e", marginBottom:8 }}>{flash}</div>}
+
+            <button onClick={handleSave} style={{
+              width:"100%", padding:"12px 0", background:"#3d2b1f", color:"#fff",
+              border:"none", borderRadius:12, fontSize:14, fontFamily:"inherit", fontWeight:700, cursor:"pointer",
+            }}>{editId !== null ? "수정 저장" : "기록 저장"}</button>
+
+            {editId !== null && (
+              <button onClick={() => { setEditId(null); setForm(mkForm(entries)); }} style={{
+                width:"100%", padding:"9px 0", background:"transparent", color:"#a8927a",
+                border:"1px solid #e8ddd5", borderRadius:12, fontSize:13, fontFamily:"inherit", cursor:"pointer", marginTop:8,
+              }}>취소</button>
+            )}
+          </div>
+
+          {/* Timeline */}
+          <div style={{ flex:"1", minWidth:0, background:"#fff", borderRadius:16, padding:20, border:"1px solid #e8ddd5" }}>
+            <div style={{ fontSize:12, color:"#a8927a", fontWeight:600, marginBottom:16, letterSpacing:1 }}>
+              📅 {form.date} 타임라인
+            </div>
+
+            {(()=>{
+              const prev = form.meals.find(m => m.isPrev);
+              return prev && (
+                <div style={{ display:"flex", gap:12, alignItems:"flex-start", marginBottom:4, opacity:0.55 }}>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                    <div style={{ width:10, height:10, borderRadius:"50%", background:"#cbd5e1", border:"2px solid #e8ddd5" }} />
+                    <div style={{ width:2, height:24, background:"#f0ebe6", margin:"2px 0" }} />
+                  </div>
+                  <div style={{ paddingBottom:8 }}>
+                    <div style={{ fontSize:11, color:"#a8927a" }}>🌙 어제 저녁</div>
+                    <div style={{ fontSize:13, color:"#3d2b1f", marginTop:2 }}>{prev.food || <span style={{ color:"#d4c4b8" }}>미입력</span>}</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {timelineMeals.map((meal, i) => {
+              const syms      = meal.symptoms ?? [-1];
+              const worst     = worstVal(syms);
+              const ws        = sym(worst);
+              const isLast    = i === timelineMeals.length - 1;
+              const activeSyms = syms.filter(v => v !== -1).map(sym);
+              return (
+                <div key={meal.key} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                    <div style={{
+                      width:14, height:14, borderRadius:"50%", background: ws.color,
+                      boxShadow: ws.sev >= 1 ? `0 0 0 3px ${ws.color}33` : "none",
+                      flexShrink:0,
+                    }} />
+                    {!isLast && <div style={{ width:2, flex:1, minHeight:36, background:"#f0ebe6", margin:"2px 0" }} />}
+                  </div>
+                  <div style={{ flex:1, paddingBottom: isLast ? 0 : 12 }}>
+                    <div style={{ fontSize:12, color:"#a8927a", marginBottom:4 }}>{meal.icon} {meal.label}</div>
+                    {activeSyms.length > 0 ? (
+                      <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:4 }}>
+                        {activeSyms.map(s => (
+                          <span key={s.value} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background: s.color+"22", color:"#3d2b1f", fontWeight:600 }}>
+                            {s.emoji} {s.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ marginBottom:4 }}>
+                        <span style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:"#cbd5e122", color:"#a8927a" }}>⚪ 무반응</span>
+                      </div>
+                    )}
+                    <div style={{ fontSize:13, color:"#3d2b1f", lineHeight:1.5 }}>
+                      {meal.food || <span style={{ color:"#d4c4b8" }}>미입력</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {timelineMeals.length === 0 && (
+              <div style={{ color:"#d4c4b8", fontSize:13, textAlign:"center", padding:"20px 0" }}>왼쪽에 기록하면 여기 표시돼</div>
+            )}
+            {form.note && (
+              <div style={{ marginTop:16, padding:"10px 12px", background:"#faf7f4", borderRadius:10, fontSize:12, color:"#6b7280" }}>
+                📝 {form.note}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── HISTORY ── */}
+      {view === "history" && (
+        <div>
+          {entries.length === 0 && (
+            <div style={{ textAlign:"center", color:"#a8927a", padding:40, fontSize:14, lineHeight:2 }}>
+              아직 기록이 없어.<br />오늘 것부터 써보자 👆
+            </div>
+          )}
+          {entries.map(entry => {
+            const worst  = worstVal(entry.meals.filter(m=>!m.isPrev).flatMap(m=>m.symptoms??[-1]));
+            const s      = sym(worst);
+            const isOpen = expandedId === entry.id;
+            const nonPrev = entry.meals.filter(m => !m.isPrev);
+            return (
+              <div key={entry.id} style={{
+                background:"#fff", borderRadius:14, marginBottom:12,
+                border:"1px solid #e8ddd5", borderLeft:`4px solid ${s.color}`, overflow:"hidden",
+              }}>
+                <div onClick={() => setExpandedId(isOpen ? null : entry.id)}
+                  style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px", cursor:"pointer" }}>
+                  <div style={{ fontWeight:700, color:"#3d2b1f", fontSize:15 }}>{entry.date}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <div style={{ display:"flex", gap:3 }}>
+                      {nonPrev.map(m => {
+                        const w = worstVal(m.symptoms ?? [-1]);
+                        const ms = sym(w);
+                        return <div key={m.key} title={`${m.label}: ${ms.label}`}
+                          style={{ width:10, height:10, borderRadius:"50%", background:ms.color }} />;
+                      })}
+                    </div>
+                    <div style={{ background:s.color+"22", padding:"3px 10px", borderRadius:20, fontSize:12, color:"#3d2b1f", fontWeight:600 }}>
+                      {s.emoji} {s.label}
+                    </div>
+                    <span style={{ color:"#a8927a", fontSize:11 }}>{isOpen ? "▲" : "▼"}</span>
+                  </div>
+                </div>
+
+                {isOpen && (
+                  <div style={{ borderTop:"1px solid #f0ebe6" }}>
+                    <div style={{ padding:"12px 16px" }}>
+                      {entry.meals.map((m, i) => {
+                        const syms = m.symptoms ?? [-1];
+                        const w    = worstVal(syms);
+                        const ms   = sym(w);
+                        const activeSyms = syms.filter(v => v !== -1).map(sym);
+                        if (!m.food && (m.isPrev || (syms.length === 1 && syms[0] === -1))) return null;
+                        const isLast = i === entry.meals.length - 1;
+                        return (
+                          <div key={m.key} style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                            <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                              <div style={{ width:10, height:10, borderRadius:"50%", background: m.isPrev ? "#cbd5e1" : ms.color, flexShrink:0, marginTop:3 }} />
+                              {!isLast && <div style={{ width:2, minHeight:20, background:"#f0ebe6", margin:"2px 0" }} />}
+                            </div>
+                            <div style={{ flex:1, paddingBottom: isLast ? 0 : 6 }}>
+                              <div style={{ fontSize:11, color:"#a8927a", marginBottom:2 }}>
+                                {m.icon} {m.label}{m.isPrev ? " (어제)" : ""}
+                              </div>
+                              {!m.isPrev && activeSyms.length > 0 && (
+                                <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:3 }}>
+                                  {activeSyms.map(s => (
+                                    <span key={s.value} style={{ fontSize:10, padding:"1px 6px", borderRadius:8, background:s.color+"33", color:"#3d2b1f" }}>
+                                      {s.emoji} {s.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {m.food && <div style={{ fontSize:12, color:"#3d2b1f" }}>{m.food}</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {entry.note && <div style={{ fontSize:12, color:"#6b7280", marginTop:8 }}>📝 {entry.note}</div>}
+                    </div>
+                    <div style={{ display:"flex", gap:8, padding:"0 16px 14px" }}>
+                      <button onClick={() => handleEdit(entry)} style={sBtn("#3d2b1f")}>수정</button>
+                      <button onClick={() => handleDelete(entry.id)} style={sBtn("#dc2626")}>삭제</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 음식 입력 + 자동완성 ──
+function FoodInput({ value, onChange, placeholder, foodHistory }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSug, setShowSug]         = useState(false);
+  const ref = useRef(null);
+
+  function handleChange(e) {
+    const val = e.target.value;
+    onChange(val);
+    const token = val.split(',').pop().trim();
+    if (token.length >= 1) {
+      const filtered = foodHistory.filter(f => matchFood(f, token)).slice(0, 8);
+      setSuggestions(filtered);
+      setShowSug(filtered.length > 0);
+    } else {
+      setShowSug(false);
+    }
+  }
+
+  function selectSug(food) {
+    const parts = value.split(',');
+    parts[parts.length - 1] = ' ' + food;
+    onChange(parts.join(',').replace(/^\s*,\s*/, '') + ', ');
+    setShowSug(false);
+  }
+
+  return (
+    <div style={{ position:"relative", marginBottom:8 }}>
+      <textarea
+        ref={ref}
+        value={value}
+        onChange={handleChange}
+        onBlur={() => setTimeout(() => setShowSug(false), 150)}
+        placeholder={placeholder}
+        style={{ ...iStyle, height:52, resize:"vertical" }}
+      />
+      {showSug && (
+        <div style={{
+          position:"absolute", top:"calc(100% - 2px)", left:0, right:0, zIndex:100,
+          background:"#fff", border:"1px solid #e8ddd5", borderRadius:"0 0 10px 10px",
+          boxShadow:"0 4px 12px rgba(0,0,0,.1)", overflow:"hidden",
+        }}>
+          {suggestions.map((f, i) => (
+            <div key={i} onMouseDown={() => selectSug(f)} style={{
+              padding:"8px 12px", fontSize:13, color:"#3d2b1f", cursor:"pointer",
+              borderTop: i > 0 ? "1px solid #f0ebe6" : "none",
+              background:"#fff",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "#faf7f4"}
+            onMouseLeave={e => e.currentTarget.style.background = "#fff"}
+            >
+              {f}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 공통 컴포넌트 ──
+function MoveBtn({ onClick, disabled, children }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      width:20, height:20, border:"1px solid #e8ddd5", borderRadius:4,
+      background: disabled ? "#f5f0eb" : "#faf7f4", color: disabled ? "#d4c4b8" : "#a8927a",
+      fontSize:9, cursor: disabled ? "default" : "pointer", padding:0,
+      display:"flex", alignItems:"center", justifyContent:"center",
+    }}>{children}</button>
+  );
+}
+function Stat({ label, value, color }) {
+  return (
+    <div style={{ flex:1, textAlign:"center" }}>
+      <div style={{ fontSize:16, fontWeight:700, color }}>{value}</div>
+      <div style={{ fontSize:10, color:"#a8927a" }}>{label}</div>
+    </div>
+  );
+}
+function SD() { return <div style={{ width:1, background:"#e8ddd5", margin:"0 4px" }} />; }
+function Label({ children }) {
+  return <div style={{ fontSize:12, color:"#a8927a", marginBottom:6, fontWeight:600 }}>{children}</div>;
+}
+const iStyle = {
+  width:"100%", padding:"10px 12px", border:"1px solid #e8ddd5", borderRadius:10,
+  fontSize:14, fontFamily:"inherit", background:"#faf7f4", color:"#3d2b1f",
+  boxSizing:"border-box", outline:"none",
+};
+const sBtn = color => ({
+  padding:"5px 14px", border:`1px solid ${color}`, borderRadius:8,
+  background:"transparent", color, fontSize:12, fontFamily:"inherit", cursor:"pointer",
+});
