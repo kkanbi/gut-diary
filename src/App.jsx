@@ -159,15 +159,27 @@ export default function GutDiary() {
     a.click();
     URL.revokeObjectURL(url);
   }
-  function handleImport(e) {
+  function handleImport(e, mode) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = ev => {
       try {
         const data = JSON.parse(ev.target.result);
-        if (Array.isArray(data)) { setEntries(data); alert(`✅ ${data.length}개 기록 불러왔어!`); }
-        else { alert("❌ 올바른 파일이 아니야"); }
+        if (!Array.isArray(data)) { alert("❌ 올바른 파일이 아니야"); return; }
+        if (mode === "overwrite") {
+          setEntries(data);
+          alert(`✅ ${data.length}개 기록으로 덮어썼어!`);
+        } else {
+          // merge: 날짜 기준으로 합치기, 충돌 시 현재 기기 우선
+          const dateMap = {};
+          data.forEach(e => { dateMap[e.date] = e; });
+          entries.forEach(e => { dateMap[e.date] = e; }); // 현재 기기 우선
+          const merged = Object.values(dateMap).sort((a, b) => b.date.localeCompare(a.date));
+          setEntries(merged);
+          const added = merged.length - entries.length;
+          alert(`✅ 합치기 완료! ${added > 0 ? `${added}개 날짜 추가됨` : "새로 추가된 날짜 없음 (현재 기기 데이터 유지)"}`);
+        }
       } catch { alert("❌ 파일 읽기 실패"); }
     };
     reader.readAsText(file);
@@ -191,8 +203,11 @@ export default function GutDiary() {
         </div>
         <div style={{ display:"flex", gap:6, marginTop:4 }}>
           <button onClick={handleExport} style={ioBtn}>⬇ 내보내기</button>
-          <label style={ioBtn}>⬆ 가져오기
-            <input type="file" accept=".json" style={{ display:"none" }} onChange={handleImport} />
+          <label style={ioBtn}>🔀 합치기
+            <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "merge")} />
+          </label>
+          <label style={{ ...ioBtn, color:"#f87171" }}>⬆ 덮어쓰기
+            <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "overwrite")} />
           </label>
         </div>
       </div>
