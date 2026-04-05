@@ -52,8 +52,8 @@
 
 ```
 GutDiary (메인)
-├── Header (내보내기/가져오기 버튼)
-├── Stats (기록/쾌변/불편/심함 일수)
+├── Header (💾 백업·복원 드롭다운)
+├── Stats (기록/쾌변/불편/복합/심함 일수)
 ├── Tabs (오늘기록 / 히스토리)
 ├── LogView
 │   ├── FormPanel
@@ -65,6 +65,7 @@ GutDiary (메인)
 │   │   └── NoteInput
 │   └── TimelinePanel (우측, 실시간 반영)
 └── HistoryView
+    ├── MonthGroup × N (연/월 헤더로 그룹핑)
     └── EntryCard × N (클릭 시 미니타임라인 펼침)
 ```
 
@@ -88,6 +89,8 @@ GutDiary (메인)
 | `mkBaseMeal(m)` | BASE_MEALS 항목 → 빈 Meal 객체 변환 |
 | `worstVal(syms)` | 증상 배열에서 가장 심한 증상 value 반환 (sev 기준) |
 | `worstSev(entry)` | 하루 기록 전체의 최악 severity 반환 (통계용) |
+| `displayColor(syms)` | 색상 결정: 쾌변+심함 동시 존재 시 혼합색(#eab308), 아니면 worstVal 색상 |
+| `isMixed(entry)` | 하루 기록에 쾌변+심함 동시 존재 여부 (통계 복합 분류용) |
 | `toggleSymptom(current, val)` | 증상 토글, 무반응 선택 시 초기화 |
 | `getChosung(str)` | 한글 문자열에서 초성 추출 |
 | `matchFood(food, query)` | 음식명 검색 (텍스트 + 초성 매칭) |
