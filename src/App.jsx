@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 
+const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID_HERE";
+const DRIVE_SCOPE      = "https://www.googleapis.com/auth/drive.appdata";
+const BACKUP_FILE_NAME = "gut-diary-backup.json";
+const GTOKEN_KEY       = "gut-diary-gtoken";
+
 const SYMPTOMS = [
   { value: -1, label: "무반응",     emoji: "⚪", color: "#cbd5e1", sev: 0  },
   { value:  4, label: "쾌변",       emoji: "💚", color: "#22c55e", sev: -1 },
@@ -80,10 +85,30 @@ export default function GutDiary() {
   const [view, setView]             = useState("log");
   const [expandedId, setExpandedId] = useState(null);
   const [flash, setFlash]           = useState("");
+  const [googleToken, setGoogleToken] = useState(null);
+  const [googleEmail, setGoogleEmail] = useState(null);
 
   useEffect(() => {
     try { localStorage.setItem("gut-diary", JSON.stringify(entries)); } catch {}
   }, [entries]);
+
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src   = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.onload = async () => {
+      const saved = localStorage.getItem(GTOKEN_KEY);
+      if (!saved) return;
+      try {
+        const res  = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${saved}`);
+        const info = await res.json();
+        if (info.error || !info.email) { localStorage.removeItem(GTOKEN_KEY); return; }
+        setGoogleToken(saved);
+        setGoogleEmail(info.email);
+      } catch { localStorage.removeItem(GTOKEN_KEY); }
+    };
+    document.head.appendChild(script);
+  }, []);
 
   const foodHistory = useMemo(() => {
     const set = new Set();
@@ -186,6 +211,86 @@ export default function GutDiary() {
     e.target.value = "";
   }
 
+  function requestGoogleAuth(callback) {
+    const tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: async (resp) => {
+        if (resp.error) { alert("❌ Google 인증 실패"); return; }
+        localStorage.setItem(GTOKEN_KEY, resp.access_token);
+        try {
+          const r    = await fetch(`https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${resp.access_token}`);
+          const info = await r.json();
+          setGoogleEmail(info.email || null);
+        } catch {}
+        setGoogleToken(resp.access_token);
+        callback(resp.access_token);
+      },
+    });
+    tokenClient.requestAccessToken();
+  }
+  function handleGoogleLogout() {
+    if (googleToken) window.google?.accounts.oauth2.revoke(googleToken, () => {});
+    localStorage.removeItem(GTOKEN_KEY);
+    setGoogleToken(null);
+    setGoogleEmail(null);
+  }
+  async function saveToDrive(token) {
+    const content   = JSON.stringify(entries, null, 2);
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='${BACKUP_FILE_NAME}'`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const { files } = await searchRes.json();
+    const metadata  = files?.length
+      ? { name: BACKUP_FILE_NAME }
+      : { name: BACKUP_FILE_NAME, parents: ["appDataFolder"] };
+    const formData = new FormData();
+    formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+    formData.append("file",     new Blob([content],                  { type: "application/json" }));
+    const method = files?.length ? "PATCH" : "POST";
+    const url    = files?.length
+      ? `https://www.googleapis.com/upload/drive/v3/files/${files[0].id}?uploadType=multipart`
+      : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+    const res = await fetch(url, { method, headers: { Authorization: `Bearer ${token}` }, body: formData });
+    if (!res.ok) throw new Error(await res.text());
+    alert(`✅ Google Drive에 저장 완료! (${entries.length}개 기록)`);
+  }
+  async function loadFromDrive(token, mode) {
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='${BACKUP_FILE_NAME}'`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const { files } = await searchRes.json();
+    if (!files?.length) { alert("❌ Drive에 저장된 기록이 없어"); return; }
+    const dataRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${files[0].id}?alt=media`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const data = await dataRes.json();
+    if (!Array.isArray(data)) { alert("❌ 올바른 파일이 아니야"); return; }
+    if (mode === "overwrite") {
+      setEntries(data);
+      alert(`✅ Drive에서 덮어쓰기 완료! (${data.length}개 기록)`);
+    } else {
+      const dateMap = {};
+      data.forEach(e => { dateMap[e.date] = e; });
+      entries.forEach(e => { dateMap[e.date] = e; }); // 현재 기기 우선
+      const merged = Object.values(dateMap).sort((a, b) => b.date.localeCompare(a.date));
+      setEntries(merged);
+      const added = merged.length - entries.length;
+      alert(`✅ Drive 합치기 완료! ${added > 0 ? `${added}개 날짜 추가됨` : "새로 추가된 날짜 없음"}`);
+    }
+  }
+  function handleDriveSave() {
+    if (googleToken) saveToDrive(googleToken).catch(() => alert("❌ Drive 저장 실패"));
+    else requestGoogleAuth(t => saveToDrive(t).catch(() => alert("❌ Drive 저장 실패")));
+  }
+  function handleDriveLoad(mode) {
+    if (googleToken) loadFromDrive(googleToken, mode).catch(() => alert("❌ Drive 불러오기 실패"));
+    else requestGoogleAuth(t => loadFromDrive(t, mode).catch(() => alert("❌ Drive 불러오기 실패")));
+  }
+
   const total    = entries.length;
   const goodDays = entries.filter(e => worstSev(e) === -1).length;
   const mildDays = entries.filter(e => worstSev(e) === 1).length;
@@ -201,14 +306,30 @@ export default function GutDiary() {
           <div style={{ fontSize:11, letterSpacing:3, color:"#a8927a", textTransform:"uppercase", marginBottom:4 }}>장 건강 기록장</div>
           <h1 style={{ fontSize:26, fontWeight:700, color:"#3d2b1f", margin:0 }}>내 배 일기 🫙</h1>
         </div>
-        <div style={{ display:"flex", gap:6, marginTop:4 }}>
-          <button onClick={handleExport} style={ioBtn}>⬇ 내보내기</button>
-          <label style={ioBtn}>🔀 합치기
-            <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "merge")} />
-          </label>
-          <label style={{ ...ioBtn, color:"#f87171" }}>⬆ 덮어쓰기
-            <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "overwrite")} />
-          </label>
+        <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:4, alignItems:"flex-end" }}>
+          <div style={{ display:"flex", gap:6 }}>
+            <button onClick={handleExport} style={ioBtn}>⬇ 내보내기</button>
+            <label style={ioBtn}>🔀 합치기
+              <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "merge")} />
+            </label>
+            <label style={{ ...ioBtn, color:"#f87171" }}>⬆ 덮어쓰기
+              <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "overwrite")} />
+            </label>
+          </div>
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            <span style={{ fontSize:11, color:"#a8927a" }}>☁️ Drive</span>
+            {googleToken ? (
+              <>
+                <button onClick={handleDriveSave} style={ioBtn}>⬆ 저장</button>
+                <button onClick={() => handleDriveLoad("merge")} style={ioBtn}>🔀 합치기</button>
+                <button onClick={() => handleDriveLoad("overwrite")} style={{ ...ioBtn, color:"#f87171" }}>⬆ 덮어쓰기</button>
+                <span style={{ fontSize:11, color:"#22c55e", whiteSpace:"nowrap" }}>● {googleEmail || "연결됨"}</span>
+                <button onClick={handleGoogleLogout} style={{ ...ioBtn, fontSize:11, color:"#94a3b8" }}>로그아웃</button>
+              </>
+            ) : (
+              <button onClick={() => requestGoogleAuth(() => {})} style={ioBtn}>Google 로그인</button>
+            )}
+          </div>
         </div>
       </div>
 
