@@ -2,7 +2,7 @@
 
 ## 기술 스택
 - **Framework**: React 19 + Vite 8
-- **Storage**: localStorage (기기 로컬 저장)
+- **Storage**: localStorage (기기 로컬 저장) + Google Drive (선택적 클라우드 백업)
 - **Deployment**: GitHub Pages (`gh-pages`)
 - **언어**: JSX (JavaScript + React)
 
@@ -93,15 +93,26 @@ GutDiary (메인)
 | `matchFood(food, query)` | 음식명 검색 (텍스트 + 초성 매칭) |
 | `handleExport()` | entries → JSON 다운로드 |
 | `handleImport(e)` | JSON 파일 → entries 복원 |
+| `requestGoogleAuth(cb)` | GIS 토큰 요청, 성공 시 cb(token) 실행 |
+| `handleGoogleLogout()` | 토큰 revoke + 상태 초기화 |
+| `saveToDrive(token)` | entries → Drive appDataFolder 저장 (upsert) |
+| `loadFromDrive(token, mode)` | Drive → entries 복원 (merge / overwrite) |
 
 ---
 
-## localStorage 구조
+## 스토리지 구조
 
+### localStorage
 ```
-key: "gut-diary"
-value: JSON.stringify(Entry[])  // 최신 날짜 순 정렬
+key: "gut-diary"        → JSON.stringify(Entry[])  // 최신 날짜 순 정렬
+key: "gut-diary-gtoken" → Google OAuth 액세스 토큰 (앱 시작 시 tokeninfo로 유효성 검증)
 ```
+
+### Google Drive (선택적)
+- **스코프**: `drive.appdata` (사용자 Drive에 보이지 않는 앱 전용 폴더)
+- **파일명**: `gut-diary-backup.json`
+- **인증**: Google Identity Services (GIS) OAuth 2.0 토큰 방식 — CDN 동적 로드
+- **API**: Google Drive REST API v3 (fetch 직접 호출, gapi 미사용)
 
 ---
 

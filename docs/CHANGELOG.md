@@ -2,6 +2,19 @@
 
 ---
 
+## [0.4.0] — 2026-04-05
+
+### Added
+- Google Drive 연동 (appDataFolder 스코프, 앱 전용 숨김 폴더)
+  - Google 로그인 / 로그아웃 (GIS OAuth 2.0 토큰 방식)
+  - ⬆ Drive 저장: 현재 기록 전체를 `gut-diary-backup.json`으로 백업
+  - 🔀 Drive 합치기: Drive 기록 + 현재 기기 기록 날짜 기준 병합 (현재 기기 우선)
+  - ⬆ Drive 덮어쓰기: Drive 기록으로 전체 교체
+  - 앱 시작 시 저장된 토큰 자동 검증 및 세션 복원
+  - 연결된 Google 계정 이메일 표시
+
+---
+
 ## [0.3.0] — 2026-04-05
 
 ### Added
