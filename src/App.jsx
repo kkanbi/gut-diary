@@ -87,7 +87,13 @@ export default function GutDiary() {
     try { const s = localStorage.getItem("gut-diary"); return s ? JSON.parse(s) : []; }
     catch { return []; }
   });
-  const [form, setForm]             = useState(mkForm());
+  const [form, setForm]             = useState(() => {
+    try {
+      const s = localStorage.getItem("gut-diary");
+      const saved = s ? JSON.parse(s) : [];
+      return mkForm(saved);
+    } catch { return mkForm(); }
+  });
   const [editId, setEditId]         = useState(null);
   const [view, setView]             = useState("log");
   const [expandedId, setExpandedId] = useState(null);
