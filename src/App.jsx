@@ -31,6 +31,13 @@ function worstSev(entry) {
   return Math.max(...active.map(sevOf));
 }
 
+function displayColor(syms = []) {
+  const hasGreen = syms.includes(4);
+  const hasRed   = syms.some(v => v === 2 || v === 3);
+  if (hasGreen && hasRed) return "#eab308";
+  return sym(worstVal(syms)).color;
+}
+
 const CHOSUNG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
 function getChosung(str) {
   return str.split('').map(ch => {
@@ -87,6 +94,8 @@ export default function GutDiary() {
   const [flash, setFlash]           = useState("");
   const [googleToken, setGoogleToken] = useState(null);
   const [googleEmail, setGoogleEmail] = useState(null);
+  const [backupOpen, setBackupOpen]   = useState(false);
+  const backupRef = useRef(null);
 
   useEffect(() => {
     try { localStorage.setItem("gut-diary", JSON.stringify(entries)); } catch {}
@@ -109,6 +118,15 @@ export default function GutDiary() {
     };
     document.head.appendChild(script);
   }, []);
+
+  useEffect(() => {
+    if (!backupOpen) return;
+    function onOutside(e) {
+      if (backupRef.current && !backupRef.current.contains(e.target)) setBackupOpen(false);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [backupOpen]);
 
   const foodHistory = useMemo(() => {
     const set = new Set();
@@ -306,30 +324,65 @@ export default function GutDiary() {
           <div style={{ fontSize:11, letterSpacing:3, color:"#a8927a", textTransform:"uppercase", marginBottom:4 }}>장 건강 기록장</div>
           <h1 style={{ fontSize:26, fontWeight:700, color:"#3d2b1f", margin:0 }}>내 배 일기 🫙</h1>
         </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:4, alignItems:"flex-end" }}>
-          <div style={{ display:"flex", gap:6 }}>
-            <button onClick={handleExport} style={ioBtn}>⬇ 내보내기</button>
-            <label style={ioBtn}>🔀 합치기
-              <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "merge")} />
-            </label>
-            <label style={{ ...ioBtn, color:"#f87171" }}>⬆ 덮어쓰기
-              <input type="file" accept=".json" style={{ display:"none" }} onChange={e => handleImport(e, "overwrite")} />
-            </label>
-          </div>
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            <span style={{ fontSize:11, color:"#a8927a" }}>☁️ Drive</span>
-            {googleToken ? (
-              <>
-                <button onClick={handleDriveSave} style={ioBtn}>⬆ 저장</button>
-                <button onClick={() => handleDriveLoad("merge")} style={ioBtn}>🔀 합치기</button>
-                <button onClick={() => handleDriveLoad("overwrite")} style={{ ...ioBtn, color:"#f87171" }}>⬆ 덮어쓰기</button>
-                <span style={{ fontSize:11, color:"#22c55e", whiteSpace:"nowrap" }}>● {googleEmail || "연결됨"}</span>
-                <button onClick={handleGoogleLogout} style={{ ...ioBtn, fontSize:11, color:"#94a3b8" }}>로그아웃</button>
-              </>
-            ) : (
-              <button onClick={() => requestGoogleAuth(() => {})} style={ioBtn}>Google 로그인</button>
-            )}
-          </div>
+        <div ref={backupRef} style={{ position:"relative", marginTop:4 }}>
+          <button onClick={() => setBackupOpen(o => !o)}
+            style={{ ...ioBtn, background: backupOpen ? "#f0ebe6" : "#fff" }}>
+            💾 백업·복원 {backupOpen ? "▲" : "▼"}
+          </button>
+          {backupOpen && (
+            <div style={{
+              position:"absolute", top:"calc(100% + 6px)", right:0, zIndex:200,
+              background:"#fff", border:"1px solid #e8ddd5", borderRadius:12,
+              boxShadow:"0 6px 20px rgba(0,0,0,.12)", padding:"10px 0", minWidth:210,
+            }}>
+              <div style={dropLabel}>로컬 파일</div>
+              <button onClick={() => { handleExport(); setBackupOpen(false); }} style={dropItem}
+                onMouseEnter={e=>e.currentTarget.style.background="#faf7f4"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                ⬇ 내보내기
+              </button>
+              <label style={dropItem}
+                onMouseEnter={e=>e.currentTarget.style.background="#faf7f4"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                🔀 합치기 (가져오기)
+                <input type="file" accept=".json" style={{ display:"none" }} onChange={e => { handleImport(e,"merge"); setBackupOpen(false); }} />
+              </label>
+              <label style={{ ...dropItem, color:"#f87171" }}
+                onMouseEnter={e=>e.currentTarget.style.background="#faf7f4"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                ⬆ 덮어쓰기 (가져오기)
+                <input type="file" accept=".json" style={{ display:"none" }} onChange={e => { handleImport(e,"overwrite"); setBackupOpen(false); }} />
+              </label>
+              <div style={{ height:1, background:"#f0ebe6", margin:"8px 0" }} />
+              <div style={dropLabel}>☁️ Google Drive</div>
+              {googleToken ? (
+                <>
+                  <button onClick={() => { handleDriveSave(); setBackupOpen(false); }} style={dropItem}
+                    onMouseEnter={e=>e.currentTarget.style.background="#faf7f4"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    ⬆ Drive에 저장
+                  </button>
+                  <button onClick={() => { handleDriveLoad("merge"); setBackupOpen(false); }} style={dropItem}
+                    onMouseEnter={e=>e.currentTarget.style.background="#faf7f4"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    🔀 Drive에서 합치기
+                  </button>
+                  <button onClick={() => { handleDriveLoad("overwrite"); setBackupOpen(false); }} style={{ ...dropItem, color:"#f87171" }}
+                    onMouseEnter={e=>e.currentTarget.style.background="#faf7f4"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    ⬆ Drive로 덮어쓰기
+                  </button>
+                  <div style={{ height:1, background:"#f0ebe6", margin:"8px 0" }} />
+                  <div style={{ padding:"4px 14px 6px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span style={{ fontSize:11, color:"#22c55e" }}>● {googleEmail || "연결됨"}</span>
+                    <button onClick={() => { handleGoogleLogout(); setBackupOpen(false); }}
+                      style={{ border:"none", background:"transparent", color:"#94a3b8", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+                      로그아웃
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <button onClick={() => { requestGoogleAuth(()=>{}); setBackupOpen(false); }} style={dropItem}
+                  onMouseEnter={e=>e.currentTarget.style.background="#faf7f4"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  Google 로그인
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -475,16 +528,16 @@ export default function GutDiary() {
 
             {timelineMeals.map((meal, i) => {
               const syms       = meal.symptoms ?? [-1];
-              const worst      = worstVal(syms);
-              const ws         = sym(worst);
+              const dotColor   = displayColor(syms);
+              const worstSym   = sym(worstVal(syms));
               const isLast     = i === timelineMeals.length - 1;
               const activeSyms = syms.filter(v => v !== -1).map(sym);
               return (
                 <div key={meal.key} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
                   <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
                     <div style={{
-                      width:14, height:14, borderRadius:"50%", background: ws.color,
-                      boxShadow: ws.sev >= 1 ? `0 0 0 3px ${ws.color}33` : "none", flexShrink:0,
+                      width:14, height:14, borderRadius:"50%", background: dotColor,
+                      boxShadow: worstSym.sev >= 1 ? `0 0 0 3px ${dotColor}33` : "none", flexShrink:0,
                     }} />
                     {!isLast && <div style={{ width:2, flex:1, minHeight:36, background:"#f0ebe6", margin:"2px 0" }} />}
                   </div>
@@ -531,80 +584,102 @@ export default function GutDiary() {
               아직 기록이 없어.<br />오늘 것부터 써보자 👆
             </div>
           )}
-          {entries.map(entry => {
-            const worst   = worstVal(entry.meals.filter(m=>!m.isPrev).flatMap(m=>m.symptoms??[-1]));
-            const s       = sym(worst);
-            const isOpen  = expandedId === entry.id;
-            const nonPrev = entry.meals.filter(m => !m.isPrev);
-            return (
-              <div key={entry.id} style={{
-                background:"#fff", borderRadius:14, marginBottom:12,
-                border:"1px solid #e8ddd5", borderLeft:`4px solid ${s.color}`, overflow:"hidden",
-              }}>
-                <div onClick={() => setExpandedId(isOpen ? null : entry.id)}
-                  style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px", cursor:"pointer" }}>
-                  <div style={{ fontWeight:700, color:"#3d2b1f", fontSize:15 }}>{entry.date}</div>
-                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    <div style={{ display:"flex", gap:3 }}>
-                      {nonPrev.map(m => {
-                        const w = worstVal(m.symptoms ?? [-1]);
-                        const ms = sym(w);
-                        return <div key={m.key} title={`${m.label}: ${ms.label}`}
-                          style={{ width:10, height:10, borderRadius:"50%", background:ms.color }} />;
-                      })}
-                    </div>
-                    <div style={{ background:s.color+"22", padding:"3px 10px", borderRadius:20, fontSize:12, color:"#3d2b1f", fontWeight:600 }}>
-                      {s.emoji} {s.label}
-                    </div>
-                    <span style={{ color:"#a8927a", fontSize:11 }}>{isOpen ? "▲" : "▼"}</span>
+          {(() => {
+            const groups = [];
+            let curKey = null;
+            entries.forEach(entry => {
+              const mk = entry.date.slice(0, 7);
+              if (mk !== curKey) { curKey = mk; groups.push({ mk, items: [] }); }
+              groups[groups.length-1].items.push(entry);
+            });
+            return groups.map(({ mk, items }, gi) => {
+              const [y, mo] = mk.split("-");
+              return (
+                <div key={mk}>
+                  <div style={{
+                    fontSize:11, fontWeight:700, color:"#a8927a", letterSpacing:2,
+                    padding:"4px 2px 8px", borderBottom:"1px solid #e8ddd5",
+                    marginBottom:10, marginTop: gi === 0 ? 0 : 16,
+                  }}>
+                    {y}년 {parseInt(mo,10)}월
                   </div>
-                </div>
-
-                {isOpen && (
-                  <div style={{ borderTop:"1px solid #f0ebe6" }}>
-                    <div style={{ padding:"12px 16px" }}>
-                      {entry.meals.map((m, i) => {
-                        const syms       = m.symptoms ?? [-1];
-                        const w          = worstVal(syms);
-                        const ms         = sym(w);
-                        const activeSyms = syms.filter(v => v !== -1).map(sym);
-                        if (!m.food && (m.isPrev || (syms.length === 1 && syms[0] === -1))) return null;
-                        const isLast = i === entry.meals.length - 1;
-                        return (
-                          <div key={m.key} style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
-                            <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-                              <div style={{ width:10, height:10, borderRadius:"50%", background: m.isPrev ? "#cbd5e1" : ms.color, flexShrink:0, marginTop:3 }} />
-                              {!isLast && <div style={{ width:2, minHeight:20, background:"#f0ebe6", margin:"2px 0" }} />}
+                  {items.map(entry => {
+                    const allSyms    = entry.meals.filter(m=>!m.isPrev).flatMap(m=>m.symptoms??[-1]);
+                    const worst      = worstVal(allSyms);
+                    const s          = sym(worst);
+                    const entryColor = displayColor(allSyms);
+                    const isOpen     = expandedId === entry.id;
+                    const nonPrev    = entry.meals.filter(m => !m.isPrev);
+                    return (
+                      <div key={entry.id} style={{
+                        background:"#fff", borderRadius:14, marginBottom:12,
+                        border:"1px solid #e8ddd5", borderLeft:`4px solid ${entryColor}`, overflow:"hidden",
+                      }}>
+                        <div onClick={() => setExpandedId(isOpen ? null : entry.id)}
+                          style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px", cursor:"pointer" }}>
+                          <div style={{ fontWeight:700, color:"#3d2b1f", fontSize:15 }}>{entry.date}</div>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <div style={{ display:"flex", gap:3 }}>
+                              {nonPrev.map(m => (
+                                <div key={m.key} title={`${m.label}: ${sym(worstVal(m.symptoms??[-1])).label}`}
+                                  style={{ width:10, height:10, borderRadius:"50%", background:displayColor(m.symptoms??[-1]) }} />
+                              ))}
                             </div>
-                            <div style={{ flex:1, paddingBottom: isLast ? 0 : 6 }}>
-                              <div style={{ fontSize:11, color:"#a8927a", marginBottom:2 }}>
-                                {m.icon} {m.label}{m.isPrev ? " (어제)" : ""}
-                              </div>
-                              {!m.isPrev && activeSyms.length > 0 && (
-                                <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:3 }}>
-                                  {activeSyms.map(s => (
-                                    <span key={s.value} style={{ fontSize:10, padding:"1px 6px", borderRadius:8, background:s.color+"33", color:"#3d2b1f" }}>
-                                      {s.emoji} {s.label}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {m.food && <div style={{ fontSize:12, color:"#3d2b1f" }}>{m.food}</div>}
+                            <div style={{ background:entryColor+"22", padding:"3px 10px", borderRadius:20, fontSize:12, color:"#3d2b1f", fontWeight:600 }}>
+                              {s.emoji} {s.label}
+                            </div>
+                            <span style={{ color:"#a8927a", fontSize:11 }}>{isOpen ? "▲" : "▼"}</span>
+                          </div>
+                        </div>
+
+                        {isOpen && (
+                          <div style={{ borderTop:"1px solid #f0ebe6" }}>
+                            <div style={{ padding:"12px 16px" }}>
+                              {entry.meals.map((m, i) => {
+                                const syms       = m.symptoms ?? [-1];
+                                const ms         = sym(worstVal(syms));
+                                const activeSyms = syms.filter(v => v !== -1).map(sym);
+                                if (!m.food && (m.isPrev || (syms.length === 1 && syms[0] === -1))) return null;
+                                const isLast = i === entry.meals.length - 1;
+                                return (
+                                  <div key={m.key} style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                                      <div style={{ width:10, height:10, borderRadius:"50%", background: m.isPrev ? "#cbd5e1" : displayColor(syms), flexShrink:0, marginTop:3 }} />
+                                      {!isLast && <div style={{ width:2, minHeight:20, background:"#f0ebe6", margin:"2px 0" }} />}
+                                    </div>
+                                    <div style={{ flex:1, paddingBottom: isLast ? 0 : 6 }}>
+                                      <div style={{ fontSize:11, color:"#a8927a", marginBottom:2 }}>
+                                        {m.icon} {m.label}{m.isPrev ? " (어제)" : ""}
+                                      </div>
+                                      {!m.isPrev && activeSyms.length > 0 && (
+                                        <div style={{ display:"flex", gap:3, flexWrap:"wrap", marginBottom:3 }}>
+                                          {activeSyms.map(s => (
+                                            <span key={s.value} style={{ fontSize:10, padding:"1px 6px", borderRadius:8, background:s.color+"33", color:"#3d2b1f" }}>
+                                              {s.emoji} {s.label}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {m.food && <div style={{ fontSize:12, color:"#3d2b1f" }}>{m.food}</div>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {entry.note && <div style={{ fontSize:12, color:"#6b7280", marginTop:8 }}>📝 {entry.note}</div>}
+                            </div>
+                            <div style={{ display:"flex", gap:8, padding:"0 16px 14px" }}>
+                              <button onClick={() => handleEdit(entry)} style={sBtn("#3d2b1f")}>수정</button>
+                              <button onClick={() => handleDelete(entry.id)} style={sBtn("#dc2626")}>삭제</button>
                             </div>
                           </div>
-                        );
-                      })}
-                      {entry.note && <div style={{ fontSize:12, color:"#6b7280", marginTop:8 }}>📝 {entry.note}</div>}
-                    </div>
-                    <div style={{ display:"flex", gap:8, padding:"0 16px 14px" }}>
-                      <button onClick={() => handleEdit(entry)} style={sBtn("#3d2b1f")}>수정</button>
-                      <button onClick={() => handleDelete(entry.id)} style={sBtn("#dc2626")}>삭제</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
     </div>
@@ -700,4 +775,13 @@ const ioBtn = {
   padding:"6px 12px", border:"1px solid #e8ddd5", borderRadius:8,
   background:"#fff", color:"#a8927a", fontSize:12, fontFamily:"Georgia,serif",
   cursor:"pointer", whiteSpace:"nowrap",
+};
+const dropItem = {
+  display:"block", width:"100%", padding:"8px 14px", border:"none",
+  background:"transparent", textAlign:"left", color:"#3d2b1f",
+  fontSize:13, fontFamily:"Georgia,serif", cursor:"pointer", whiteSpace:"nowrap",
+};
+const dropLabel = {
+  fontSize:10, color:"#a8927a", letterSpacing:1,
+  padding:"2px 14px 6px", textTransform:"uppercase",
 };
