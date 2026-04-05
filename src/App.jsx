@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 
-const GOOGLE_CLIENT_ID = "YOUR_CLIENT_ID_HERE";
+const GOOGLE_CLIENT_ID = "1091054006094-57mjgruhj8djhi2s2e81pah1p1demj65.apps.googleusercontent.com";
 const DRIVE_SCOPE      = "https://www.googleapis.com/auth/drive.appdata";
 const BACKUP_FILE_NAME = "gut-diary-backup.json";
 const GTOKEN_KEY       = "gut-diary-gtoken";
