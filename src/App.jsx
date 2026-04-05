@@ -626,7 +626,7 @@ export default function GutDiary() {
                               ))}
                             </div>
                             <div style={{ background:entryColor+"22", padding:"3px 10px", borderRadius:20, fontSize:12, color:"#3d2b1f", fontWeight:600 }}>
-                              {s.emoji} {s.label}
+                              {entryColor === "#eab308" ? "🟡 복합" : `${s.emoji} ${s.label}`}
                             </div>
                             <span style={{ color:"#a8927a", fontSize:11 }}>{isOpen ? "▲" : "▼"}</span>
                           </div>
