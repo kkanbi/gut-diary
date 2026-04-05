@@ -315,10 +315,12 @@ export default function GutDiary() {
     else requestGoogleAuth(t => loadFromDrive(t, mode).catch(() => alert("❌ Drive 불러오기 실패")));
   }
 
-  const total    = entries.length;
-  const goodDays = entries.filter(e => worstSev(e) === -1).length;
-  const mildDays = entries.filter(e => worstSev(e) === 1).length;
-  const badDays  = entries.filter(e => worstSev(e) === 2).length;
+  const total     = entries.length;
+  const isMixed   = e => { const s = e.meals.filter(m=>!m.isPrev).flatMap(m=>m.symptoms??[-1]); return s.includes(4) && s.some(v=>v===2||v===3); };
+  const goodDays  = entries.filter(e => worstSev(e) === -1).length;
+  const mildDays  = entries.filter(e => worstSev(e) === 1).length;
+  const mixedDays = entries.filter(isMixed).length;
+  const badDays   = entries.filter(e => !isMixed(e) && worstSev(e) === 2).length;
   const timelineMeals = form.meals.filter(m => !m.isPrev);
 
   return (
@@ -398,6 +400,7 @@ export default function GutDiary() {
           <Stat label="기록" value={`${total}일`} color="#3d2b1f" />
           <SD /><Stat label="쾌변" value={`${goodDays}일`} color="#22c55e" />
           <SD /><Stat label="불편" value={`${mildDays}일`} color="#d97706" />
+          <SD /><Stat label="복합" value={`${mixedDays}일`} color="#eab308" />
           <SD /><Stat label="심함" value={`${badDays}일`} color="#dc2626" />
         </div>
       )}
