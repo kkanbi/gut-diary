@@ -321,8 +321,6 @@ export default function GutDiary() {
   const mildDays  = entries.filter(e => worstSev(e) === 1).length;
   const mixedDays = entries.filter(isMixed).length;
   const badDays   = entries.filter(e => !isMixed(e) && worstSev(e) === 2).length;
-  const timelineMeals = form.meals.filter(m => !m.isPrev);
-
   return (
     <div style={{ minHeight:"100vh", background:"#faf7f4", fontFamily:"Georgia,serif", padding:"24px 32px" }}>
 
@@ -420,9 +418,7 @@ export default function GutDiary() {
 
       {/* ── LOG ── */}
       {view === "log" && (
-        <div style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
-
-          <div style={{ flex:"2", minWidth:0, background:"#fff", borderRadius:16, padding:20, border:"1px solid #e8ddd5" }}>
+        <div style={{ background:"#fff", borderRadius:16, padding:20, border:"1px solid #e8ddd5" }}>
             <Label>날짜</Label>
             <input type="date" value={form.date}
               onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
@@ -433,9 +429,16 @@ export default function GutDiary() {
               const isLast     = idx === form.meals.length - 1;
               const minMovable = form.meals.findIndex(m => !m.fixed);
               const syms       = meal.symptoms ?? [-1];
+              const dotColor   = meal.isPrev ? "#cbd5e1" : displayColor(syms);
+              const glow       = !meal.isPrev && sym(worstVal(syms)).sev >= 1;
               return (
                 <div key={meal.key} style={{ marginBottom:16, paddingBottom:16, borderBottom:"1px dashed #f0ebe6" }}>
                   <div style={{ display:"flex", alignItems:"center", marginBottom:6, gap:6 }}>
+                    <div style={{
+                      width:10, height:10, borderRadius:"50%", flexShrink:0,
+                      background: dotColor,
+                      boxShadow: glow ? `0 0 0 3px ${dotColor}33` : "none",
+                    }} />
                     <span style={{ fontSize:14 }}>{meal.icon}</span>
                     {isSnack ? (
                       <input value={meal.label} onChange={e => updateMeal(idx, "label", e.target.value)}
@@ -511,77 +514,6 @@ export default function GutDiary() {
                 border:"1px solid #e8ddd5", borderRadius:12, fontSize:13, fontFamily:"inherit", cursor:"pointer", marginTop:8,
               }}>취소</button>
             )}
-          </div>
-
-          {/* Timeline */}
-          <div style={{ flex:"1", minWidth:0, background:"#fff", borderRadius:16, padding:20, border:"1px solid #e8ddd5" }}>
-            <div style={{ fontSize:12, color:"#a8927a", fontWeight:600, marginBottom:16, letterSpacing:1 }}>
-              📅 {form.date} 타임라인
-            </div>
-
-            {(()=>{
-              const prev = form.meals.find(m => m.isPrev);
-              return prev && (
-                <div style={{ display:"flex", gap:12, alignItems:"flex-start", marginBottom:4, opacity:0.55 }}>
-                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-                    <div style={{ width:10, height:10, borderRadius:"50%", background:"#cbd5e1", border:"2px solid #e8ddd5" }} />
-                    <div style={{ width:2, height:24, background:"#f0ebe6", margin:"2px 0" }} />
-                  </div>
-                  <div style={{ paddingBottom:8 }}>
-                    <div style={{ fontSize:11, color:"#a8927a" }}>🌙 어제 저녁</div>
-                    <div style={{ fontSize:13, color:"#3d2b1f", marginTop:2 }}>{prev.food || <span style={{ color:"#d4c4b8" }}>미입력</span>}</div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {timelineMeals.map((meal, i) => {
-              const syms       = meal.symptoms ?? [-1];
-              const dotColor   = displayColor(syms);
-              const worstSym   = sym(worstVal(syms));
-              const isLast     = i === timelineMeals.length - 1;
-              const activeSyms = syms.filter(v => v !== -1).map(sym);
-              return (
-                <div key={meal.key} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
-                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
-                    <div style={{
-                      width:14, height:14, borderRadius:"50%", background: dotColor,
-                      boxShadow: worstSym.sev >= 1 ? `0 0 0 3px ${dotColor}33` : "none", flexShrink:0,
-                    }} />
-                    {!isLast && <div style={{ width:2, flex:1, minHeight:36, background:"#f0ebe6", margin:"2px 0" }} />}
-                  </div>
-                  <div style={{ flex:1, paddingBottom: isLast ? 0 : 12 }}>
-                    <div style={{ fontSize:12, color:"#a8927a", marginBottom:4 }}>{meal.icon} {meal.label}</div>
-                    {activeSyms.length > 0 ? (
-                      <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginBottom:4 }}>
-                        {activeSyms.map(s => (
-                          <span key={s.value} style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:s.color+"22", color:"#3d2b1f", fontWeight:600 }}>
-                            {s.emoji} {s.label}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ marginBottom:4 }}>
-                        <span style={{ fontSize:10, padding:"2px 8px", borderRadius:10, background:"#cbd5e122", color:"#a8927a" }}>⚪ 무반응</span>
-                      </div>
-                    )}
-                    <div style={{ fontSize:13, color:"#3d2b1f", lineHeight:1.5 }}>
-                      {meal.food || <span style={{ color:"#d4c4b8" }}>미입력</span>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {timelineMeals.length === 0 && (
-              <div style={{ color:"#d4c4b8", fontSize:13, textAlign:"center", padding:"20px 0" }}>왼쪽에 기록하면 여기 표시돼</div>
-            )}
-            {form.note && (
-              <div style={{ marginTop:16, padding:"10px 12px", background:"#faf7f4", borderRadius:10, fontSize:12, color:"#6b7280" }}>
-                📝 {form.note}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
