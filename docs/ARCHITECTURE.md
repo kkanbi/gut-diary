@@ -55,15 +55,14 @@ GutDiary (메인)
 ├── Header (💾 백업·복원 드롭다운)
 ├── Stats (기록/쾌변/불편/복합/심함 일수)
 ├── Tabs (오늘기록 / 히스토리)
-├── LogView
-│   ├── FormPanel
-│   │   ├── DateInput
-│   │   ├── MealBlock × N (끼니마다)
-│   │   │   ├── FoodInput (자동완성 포함)
-│   │   │   │   └── Suggestions dropdown
-│   │   │   └── SymptomButtons (복수 선택 토글)
-│   │   └── NoteInput
-│   └── TimelinePanel (우측, 실시간 반영)
+├── LogView (단일 컬럼)
+│   ├── DateInput
+│   ├── MealBlock × N (끼니마다)
+│   │   ├── dot (증상 색상 인라인 표시)
+│   │   ├── FoodInput (자동완성 포함)
+│   │   │   └── Suggestions dropdown
+│   │   └── SymptomButtons (복수 선택 토글)
+│   └── NoteInput
 └── HistoryView
     ├── MonthGroup × N (연/월 헤더로 그룹핑)
     └── EntryCard × N (클릭 시 미니타임라인 펼침)
